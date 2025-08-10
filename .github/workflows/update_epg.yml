@@ -27,10 +27,10 @@ jobs:
       - name: Merge EPG
         run: python merge_epg.py
 
-      - name: Commit and push combined EPG
+      - name: Commit and push combined EPG gzip
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add combined_epg.xml
-          git commit -m "Update combined EPG" || echo "No changes to commit"
+          git add combined_epg.xml.gz
+          git commit -m "Update combined EPG gzip" || echo "No changes to commit"
           git push
