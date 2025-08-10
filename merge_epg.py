@@ -3,7 +3,7 @@ import gzip
 import xml.etree.ElementTree as ET
 from io import BytesIO
 
-# Your 4 EPG source URLs (already provided by you)
+# Your 4 EPG source URLs
 epg_urls = [
     "https://epgshare01.online/epgshare01/epg_ripper_UK1.xml.gz",
     "https://epgshare01.online/epgshare01/epg_ripper_US1.xml.gz",
@@ -28,7 +28,12 @@ for url in epg_urls:
     except Exception as e:
         print(f"  ❌ Failed {url}: {e}")
 
-# Write merged XML
+# Write uncompressed XML (optional)
 tree = ET.ElementTree(root)
 tree.write("combined_epg.xml", encoding="utf-8", xml_declaration=True)
-print("Saved combined_epg.xml")
+
+# Write compressed gzipped XML
+with gzip.open("combined_epg.xml.gz", "wb") as f:
+    tree.write(f, encoding="utf-8", xml_declaration=True)
+
+print("Saved combined_epg.xml and combined_epg.xml.gz")
