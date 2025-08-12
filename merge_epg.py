@@ -3,6 +3,7 @@ import gzip
 import xml.etree.ElementTree as ET
 from io import BytesIO
 import difflib
+import re
 
 # --- EPG URLs ---
 epg_urls = [
@@ -16,6 +17,18 @@ epg_urls = [
 m3u_url = "https://bit.ly/47dWcV1"
 
 headers = {"User-Agent": "EPG-Merger/1.0 (+https://github.com)"}
+
+# --- Words to ignore for matching ---
+IGNORE_WORDS = ["hd", "fhd", "sd", "uhd", "4k", "1080p"]
+
+def clean_name(name: str) -> str:
+    """Lowercase, strip, and remove quality tags while keeping unique identifiers."""
+    name = name.lower().strip()
+    # Remove extra spaces and punctuation
+    name = re.sub(r"[\(\)\[\]\-\.]", " ", name)
+    # Remove quality tags only if standalone words
+    words = [w for w in name.split() if w not in IGNORE_WORDS]
+    return " ".join(words)
 
 # --- Step 1: Download & parse M3U ---
 print(f"Downloading playlist from {m3u_url} ...")
@@ -42,8 +55,8 @@ for line in playlist_text:
 
 print(f"✅ Parsed {len(m3u_channels)} channels from M3U")
 
-# Prepare lookup lists for fuzzy matching
-playlist_names = [c['tvg-name'].lower() for c in m3u_channels]
+# Precompute cleaned names for fuzzy matching
+playlist_names_clean = [clean_name(c['tvg-name']) for c in m3u_channels]
 
 # --- Step 2: Merge all EPGs ---
 root = ET.Element("tv")
@@ -61,21 +74,27 @@ for url in epg_urls:
     except Exception as e:
         print(f"  ❌ Failed {url}: {e}")
 
-# --- Step 3: Align EPG channel IDs with playlist using fuzzy match ---
+# --- Step 3: Align EPG channel IDs ---
 for channel in root.findall("channel"):
     display_elem = channel.find("display-name")
     if display_elem is not None and display_elem.text:
-        display_name = display_elem.text.strip().lower()
+        display_name = display_elem.text.strip()
+        clean_display = clean_name(display_name)
 
-        # Try exact match first
-        match = next((c for c in m3u_channels if c['tvg-name'].lower() == display_name), None)
+        # 1. Exact clean match
+        match = None
+        if clean_display in playlist_names_clean:
+            idx = playlist_names_clean.index(clean_display)
+            match = m3u_channels[idx]
 
-        # If no exact match, try fuzzy matching
+        # 2. Fuzzy clean match
         if not match:
-            best_match_name = difflib.get_close_matches(display_name, playlist_names, n=1, cutoff=0.7)
-            if best_match_name:
-                match = next((c for c in m3u_channels if c['tvg-name'].lower() == best_match_name[0]), None)
+            best_match = difflib.get_close_matches(clean_display, playlist_names_clean, n=1, cutoff=0.7)
+            if best_match:
+                idx = playlist_names_clean.index(best_match[0])
+                match = m3u_channels[idx]
 
+        # If found, update EPG ID
         if match:
             new_id = match['tvg-id'] if match['tvg-id'] else match['tvg-name']
             channel.set("id", new_id)
@@ -93,4 +112,9 @@ with open("aligned_playlist.m3u", "w", encoding="utf-8") as f:
         f.write(f'#EXTINF:-1 tvg-id="{tvg_id}" tvg-name="{ch["tvg-name"]}",{ch["tvg-name"]}\n')
         f.write(f"{ch['url']}\n")
 
-print("✅ Saved aligned_epg.xml.gz and aligned_playlist.m3u")
+# --- Step 6: Save compressed M3U ---
+with open("aligned_playlist.m3u", "rb") as f_in:
+    with gzip.open("aligned_playlist.m3u.gz", "wb") as f_out:
+        f_out.writelines(f_in)
+
+print("✅ Saved aligned_epg.xml.gz, aligned_playlist.m3u, and aligned_playlist.m3u.gz")
