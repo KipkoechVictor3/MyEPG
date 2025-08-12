@@ -1,121 +1,119 @@
+# update_m3u_epg.py
 import requests
 import gzip
 import xml.etree.ElementTree as ET
 from io import BytesIO
-import difflib
+from rapidfuzz import process, fuzz
 import re
+from datetime import datetime
 
-# --- EPG URLs ---
-epg_urls = [
+# -------- CONFIG --------
+M3U_URL = "https://your-original-m3u-url-here"
+EPG_URLS = [
     "https://epgshare01.online/epgshare01/epg_ripper_UK1.xml.gz",
     "https://epgshare01.online/epgshare01/epg_ripper_US1.xml.gz",
     "https://epgshare01.online/epgshare01/epg_ripper_NZ1.xml.gz",
-    "https://epgshare01.online/epgshare01/epg_ripper_DUMMY_CHANNELS.xml.gz"
+    "https://epgshare01.online/epgshare01/epg_ripper_DUMMY_CHANNELS.xml.gz",
     "https://epgshare01.online/epgshare01/epg_ripper_ZA1.xml.gz"
 ]
+SIMILARITY_THRESHOLD = 85  # fuzzy match %
+OUTPUT_M3U = "updated_playlist.m3u"
+OUTPUT_EPG = "combined_epg.xml.gz"
 
-# --- Playlist URL ---
-m3u_url = "https://bit.ly/47dWcV1"
-
-headers = {"User-Agent": "EPG-Merger/1.0 (+https://github.com)"}
-
-# --- Words to ignore for matching ---
-IGNORE_WORDS = ["hd", "fhd", "sd", "uhd", "4k", "1080p"]
-
-def clean_name(name: str) -> str:
-    """Lowercase, strip, and remove quality tags while keeping unique identifiers."""
-    name = name.lower().strip()
-    # Remove extra spaces and punctuation
-    name = re.sub(r"[\(\)\[\]\-\.]", " ", name)
-    # Remove quality tags only if standalone words
-    words = [w for w in name.split() if w not in IGNORE_WORDS]
-    return " ".join(words)
-
-# --- Step 1: Download & parse M3U ---
-print(f"Downloading playlist from {m3u_url} ...")
-r = requests.get(m3u_url, timeout=60, headers=headers)
-r.raise_for_status()
-playlist_text = r.text.strip().splitlines()
-
-m3u_channels = []
-current = {}
-for line in playlist_text:
-    if line.startswith("#EXTINF:"):
-        if 'tvg-id="' in line:
-            current['tvg-id'] = line.split('tvg-id="')[1].split('"')[0]
-        else:
-            current['tvg-id'] = None
-        if 'tvg-name="' in line:
-            current['tvg-name'] = line.split('tvg-name="')[1].split('"')[0]
-        else:
-            current['tvg-name'] = line.split(",")[-1].strip()
-    elif line.startswith("http"):
-        current['url'] = line.strip()
-        m3u_channels.append(current)
-        current = {}
-
-print(f"✅ Parsed {len(m3u_channels)} channels from M3U")
-
-# Precompute cleaned names for fuzzy matching
-playlist_names_clean = [clean_name(c['tvg-name']) for c in m3u_channels]
-
-# --- Step 2: Merge all EPGs ---
-root = ET.Element("tv")
-for url in epg_urls:
-    print(f"Downloading {url} ...")
-    try:
-        r = requests.get(url, timeout=60, headers=headers)
+# -------- FUNCTIONS --------
+def download_epgs():
+    channels = {}
+    for url in EPG_URLS:
+        print(f"Downloading EPG: {url}")
+        r = requests.get(url, timeout=30)
         r.raise_for_status()
-        with gzip.GzipFile(fileobj=BytesIO(r.content)) as gz:
-            xml_content = gz.read()
-        epg_tree = ET.fromstring(xml_content)
-        for child in epg_tree:
-            root.append(child)
-        print(f"  ✅ Added: {url}")
-    except Exception as e:
-        print(f"  ❌ Failed {url}: {e}")
+        with gzip.GzipFile(fileobj=BytesIO(r.content)) as f:
+            tree = ET.parse(f)
+            root = tree.getroot()
+            for ch in root.findall("channel"):
+                tvg_id = ch.get("id")
+                display_names = [dn.text for dn in ch.findall("display-name")]
+                logo_elem = ch.find("icon")
+                logo = logo_elem.get("src") if logo_elem is not None else None
+                for name in display_names:
+                    channels[name.lower()] = {
+                        "tvg-id": tvg_id,
+                        "tvg-logo": logo
+                    }
+    print(f"Collected {len(channels)} channels from EPG")
+    return channels
 
-# --- Step 3: Align EPG channel IDs ---
-for channel in root.findall("channel"):
-    display_elem = channel.find("display-name")
-    if display_elem is not None and display_elem.text:
-        display_name = display_elem.text.strip()
-        clean_display = clean_name(display_name)
+def download_m3u():
+    print(f"Downloading M3U: {M3U_URL}")
+    r = requests.get(M3U_URL, timeout=30)
+    r.raise_for_status()
+    return r.text.splitlines()
 
-        # 1. Exact clean match
-        match = None
-        if clean_display in playlist_names_clean:
-            idx = playlist_names_clean.index(clean_display)
-            match = m3u_channels[idx]
+def update_m3u(epg_channels, m3u_lines):
+    updated_lines = []
+    channel_names = list(epg_channels.keys())
 
-        # 2. Fuzzy clean match
-        if not match:
-            best_match = difflib.get_close_matches(clean_display, playlist_names_clean, n=1, cutoff=0.7)
-            if best_match:
-                idx = playlist_names_clean.index(best_match[0])
-                match = m3u_channels[idx]
+    for i, line in enumerate(m3u_lines):
+        if line.startswith("#EXTINF"):
+            # Extract tvg-name and tvg-id
+            name_match = re.search(r'tvg-name="([^"]+)"', line)
+            id_match = re.search(r'tvg-id="([^"]+)"', line)
+            logo_match = re.search(r'tvg-logo="([^"]+)"', line)
 
-        # If found, update EPG ID
-        if match:
-            new_id = match['tvg-id'] if match['tvg-id'] else match['tvg-name']
-            channel.set("id", new_id)
+            original_name = name_match.group(1) if name_match else None
+            original_id = id_match.group(1) if id_match else ""
+            original_logo = logo_match.group(1) if logo_match else ""
 
-# --- Step 4: Save aligned EPG ---
-tree = ET.ElementTree(root)
-with gzip.open("aligned_epg.xml.gz", "wb") as f:
-    tree.write(f, encoding="utf-8", xml_declaration=True)
+            if original_name:
+                best_match = process.extractOne(
+                    original_name.lower(),
+                    channel_names,
+                    scorer=fuzz.token_sort_ratio
+                )
 
-# --- Step 5: Save aligned M3U ---
-with open("aligned_playlist.m3u", "w", encoding="utf-8") as f:
-    f.write("#EXTM3U\n")
-    for ch in m3u_channels:
-        tvg_id = ch['tvg-id'] if ch['tvg-id'] else ch['tvg-name']
-        f.write(f'#EXTINF:-1 tvg-id="{tvg_id}" tvg-name="{ch["tvg-name"]}",{ch["tvg-name"]}\n')
-        f.write(f"{ch['url']}\n")
+                if best_match and best_match[1] >= SIMILARITY_THRESHOLD:
+                    match_data = epg_channels[best_match[0]]
+                    new_tvg_id = match_data["tvg-id"]
+                    new_logo = match_data["tvg-logo"]
 
-# --- Step 6: Save compressed M3U ---
-with open("aligned_playlist.m3u", "rb") as f_in:
-    with gzip.open("aligned_playlist.m3u.gz", "wb") as f_out:
-        f_out.writelines(f_in)
+                    # Replace only tvg-id
+                    line = re.sub(r'tvg-id="([^"]*)"', f'tvg-id="{new_tvg_id}"', line)
 
-print("✅ Saved aligned_epg.xml.gz, aligned_playlist.m3u, and aligned_playlist.m3u.gz")
+                    # Fill logo if missing
+                    if not original_logo and new_logo:
+                        if 'tvg-logo="' in line:
+                            line = re.sub(r'tvg-logo="([^"]*)"', f'tvg-logo="{new_logo}"', line)
+                        else:
+                            line = line.replace(original_name, f'tvg-logo="{new_logo}" {original_name}')
+
+        updated_lines.append(line)
+
+    return "\n".join(updated_lines)
+
+def combine_epgs():
+    print("Combining EPGs...")
+    root = ET.Element("tv")
+    for url in EPG_URLS:
+        r = requests.get(url, timeout=30)
+        r.raise_for_status()
+        with gzip.GzipFile(fileobj=BytesIO(r.content)) as f:
+            tree = ET.parse(f)
+            for elem in tree.getroot():
+                root.append(elem)
+    buf = BytesIO()
+    with gzip.GzipFile(fileobj=buf, mode="w") as f:
+        ET.ElementTree(root).write(f, encoding="utf-8")
+    with open(OUTPUT_EPG, "wb") as f:
+        f.write(buf.getvalue())
+    print(f"Saved combined EPG to {OUTPUT_EPG}")
+
+if __name__ == "__main__":
+    epg_data = download_epgs()
+    m3u_data = download_m3u()
+    updated_m3u = update_m3u(epg_data, m3u_data)
+
+    with open(OUTPUT_M3U, "w", encoding="utf-8") as f:
+        f.write(updated_m3u)
+
+    combine_epgs()
+    print(f"Updated playlist saved to {OUTPUT_M3U} — {datetime.utcnow()} UTC")
