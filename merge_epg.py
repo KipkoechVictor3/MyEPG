@@ -13,7 +13,8 @@ epg_urls = [
     "https://epgshare01.online/epgshare01/epg_ripper_DUMMY_CHANNELS.xml.gz",
     "https://epgshare01.online/epgshare01/epg_ripper_ZA1.xml.gz",
     "https://epgshare01.online/epgshare01/epg_ripper_ID1.xml.gz",
-    "https://epgshare01.online/epgshare01/epg_ripper_MY1.xml.gz"
+    "https://epgshare01.online/epgshare01/epg_ripper_MY1.xml.gz",
+    "https://epgshare01.online/epgshare01/epg_ripper_AU1.xml.gz"
 ]
 
 headers = {"User-Agent": "EPG-Merger/1.0 (+https://github.com)"}
