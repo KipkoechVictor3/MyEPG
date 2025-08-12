@@ -3,7 +3,7 @@ name: Update EPG
 on:
   schedule:
     - cron: "0 */6 * * *"   # every 6 hours (UTC)
-  workflow_dispatch:
+  workflow_dispatch:        # manual trigger
 
 permissions:
   contents: write
@@ -31,6 +31,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add aligned_epg.xml.gz aligned_playlist.m3u
+          git add aligned_epg.xml.gz aligned_playlist.m3u aligned_playlist.m3u.gz
           git commit -m "Auto update aligned M3U + EPG" || echo "No changes to commit"
           git push
