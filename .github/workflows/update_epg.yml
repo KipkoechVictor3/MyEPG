@@ -3,7 +3,7 @@ name: Update EPG
 on:
   schedule:
     - cron: "0 */6 * * *"   # every 6 hours (UTC)
-  workflow_dispatch:        # allows manual run from Actions UI
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -24,13 +24,13 @@ jobs:
       - name: Install dependencies
         run: pip install requests
 
-      - name: Merge EPG
+      - name: Merge EPG + Align Playlist
         run: python merge_epg.py
 
-      - name: Commit and push combined EPG gzip
+      - name: Commit and push outputs
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add combined_epg.xml.gz
-          git commit -m "Update combined EPG gzip" || echo "No changes to commit"
+          git add aligned_epg.xml.gz aligned_playlist.m3u
+          git commit -m "Auto update aligned M3U + EPG" || echo "No changes to commit"
           git push
