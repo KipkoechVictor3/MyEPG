@@ -3,7 +3,7 @@ name: Update M3U & EPG
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/2 * * * *"   # every 2 minutes for M3U
+    - cron: "*/5 * * * *"   # every 2 minutes for M3U
     - cron: "0 */6 * * *"   # every 6 hours for EPG
 
 jobs:
