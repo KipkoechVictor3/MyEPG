@@ -1,0 +1,36 @@
+name: Update M3U & EPG
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/2 * * * *"   # every 2 minutes for M3U
+    - cron: "0 */6 * * *"   # every 6 hours for EPG
+
+jobs:
+  update-m3u:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: pip install -r requirements.txt
+      - run: python update_m3u_with_mapping.py
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Auto-update M3U playlist"
+          push_options: "--force"
+
+  update-epg:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: pip install -r requirements.txt
+      - run: python update_epg.py
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Auto-update EPG"
+          push_options: "--force"
