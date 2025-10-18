@@ -6,18 +6,44 @@ from io import BytesIO
 import os
 import time
 
+# --- Configuration ---
 EPG_URL = "https://epgshare01.online/epgshare01/epg_ripper_ALL_SOURCES1.xml.gz"
-CHANNELS_FILE = "Allchannels.txt"
+
+# The Dropbox share link for Allchannels.txt
+# The 'dl=1' parameter is appended to force a direct download.
+CHANNELS_DOWNLOAD_URL = "https://www.dropbox.com/scl/fi/7xk7buzsk3il7lp7ffv5m/Allchannels.txt?rlkey=86ls9mfqls2e00ff71xta0sjz&st=4hresdpo&dl=1"
+
 OUTPUT_FILE = "filtered_epg.xml.gz"
 HEADERS = {"User-Agent": "EPG-Filter/Stream/1.1 (+https://github.com)"}
 
 PROGRESS_EVERY = 10000  # print progress every N parsed elements
+# ---------------------
 
-def load_tvg_ids(filepath):
-    with open(filepath, encoding="utf-8") as f:
-        ids = [line.strip() for line in f if line.strip()]
+def download_channels_file(url: str):
+    """Downloads the Allchannels.txt file from the given URL and returns its content as a list of lines."""
+    print(f"📡 Downloading channels list from {url}...")
+    try:
+        # Use requests to download the content
+        r = requests.get(url, headers=HEADERS, timeout=30)
+        r.raise_for_status()  # Check for HTTP errors
+
+        # Decode the content as a string, splitting into lines
+        content_lines = r.text.splitlines()
+        print(f"✅ Downloaded {len(content_lines)} lines of channel data.")
+        return content_lines
+
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Error downloading channels file: {e}")
+        # Exit the program since the list of channels is essential
+        raise SystemExit(1)
+
+
+def load_tvg_ids(channel_lines):
+    """Parses the downloaded channel content to extract tvg-ids."""
+    ids = [line.strip() for line in channel_lines if line.strip()]
     lower_ids = set(i.lower() for i in ids)
     return ids, lower_ids  # return original list and lowercase set
+
 
 def download_epg_stream(url):
     print(f"📡 Downloading EPG (stream mode) from {url} ...")
@@ -31,6 +57,8 @@ def download_epg_stream(url):
     data.seek(0)
     print(f"✅ Download complete ({size_mb:.1f} MB gzipped)")
     return data
+
+# --- The rest of the functions (serialize_element, filter_epg_stream, pretty_summary) remain the same ---
 
 def serialize_element(elem):
     """Return bytes containing the XML serialization of elem (including tail cleared)."""
@@ -99,7 +127,7 @@ def pretty_summary(original_ids, results):
     found = results["channels_written"]
     total_prog = results["programmes_written"]
     print("\n📊 Summary:")
-    print(f"  • Requested tvg-ids (in {CHANNELS_FILE}): {total_requested}")
+    print(f"  • Requested tvg-ids (from Dropbox): {total_requested}")
     print(f"  • Channels found & written: {found}")
     print(f"  • Programmes written: {total_prog:,}")
     print(f"  • Total XML elements parsed: {results['elements_parsed']:,}")
@@ -114,14 +142,16 @@ def pretty_summary(original_ids, results):
     else:
         print("  No programme counts available.")
 
+
 def main():
-    if not os.path.exists(CHANNELS_FILE):
-        print(f"❌ Missing {CHANNELS_FILE}. Please create it in the same folder.")
-        return
+    # 1. Download the channels file from Dropbox
+    channel_lines = download_channels_file(CHANNELS_DOWNLOAD_URL)
 
-    original_ids, wanted_ids_lower = load_tvg_ids(CHANNELS_FILE)
-    print(f"📖 Loaded {len(original_ids)} tvg-ids from {CHANNELS_FILE}")
+    # 2. Load the IDs from the downloaded content
+    original_ids, wanted_ids_lower = load_tvg_ids(channel_lines)
+    print(f"📖 Loaded {len(original_ids)} tvg-ids from the downloaded file.")
 
+    # 3. Proceed with EPG download and filtering
     gz_data = download_epg_stream(EPG_URL)
     results = filter_epg_stream(gz_data, wanted_ids_lower)
 
