@@ -1,10 +1,12 @@
+# NOTE: This script requires the 'lxml' and 'requests' libraries. 
+# Install them using: pip install lxml requests
 import requests
 import gzip
 from lxml import etree # Replaced xml.etree.ElementTree with lxml
 from io import BytesIO
 from urllib.parse import urljoin
 import re 
-import sys # Used for final output size check
+import sys 
 
 # --- Configuration ---
 BASE_URL = "https://epgshare01.online/epgshare01/"
@@ -15,51 +17,66 @@ EPG_KEYS_TO_FIND = [
     "US_SPORTS", "AU", "CA", "SG", "NG", "KE"
 ]
 
-HEADERS = {"User-Agent": "EPG-Merger-Dynamic-Reduced/1.1 (+https://github.com)"}
+HEADERS = {"User-Agent": "EPG-Merger-Dynamic-Reduced/1.2 (+https://github.com)"}
 TIMEOUT = 60
 # ---------------------
 
 # --- New Function for Size Reduction (Content Cleanup) ---
 def optimize_epg_content(root: etree.Element):
     """
-    Applies small content optimizations to the merged XML tree before final writing.
-    This helps remove redundancy not stripped by the main parser.
+    Applies aggressive content optimizations to the merged XML tree before final writing.
+    This focuses on removing optional, high-volume, or redundant data elements.
     """
-    print("Applying content optimization (removing redundant/empty elements)...")
+    print("Applying AGGRESSIVE content optimization (stripping non-essential tags)...")
     
-    # 1. Iterate through all 'programme' elements
+    # 1. Iterate through all 'programme' elements for deep cleanup
     for programme in root.iter('programme'):
         
-        # Remove common non-essential, empty elements if present
-        elements_to_check = ['credits', 'star-rating', 'review', 'icon']
+        # AGGRESSIVE STRATEGY 1: Remove common non-essential and high-volume elements
+        # Removing these optional tags can drastically reduce the byte count.
+        elements_to_strip = [
+            'sub-title',  # Often repeats information or is low-value
+            'credits',    # Unless critical, actors/directors lists are large
+            'star-rating',
+            'review',
+            'icon',       # URLs are compressible, but removing the tag saves structure bytes
+            'language',   # If the language is consistent across the source, removing this saves a lot of repetition
+        ]
+        
+        for tag in elements_to_strip:
+            element = programme.find(tag)
+            if element is not None:
+                parent = element.getparent()
+                if parent is not None:
+                    parent.remove(element)
+
+        
+        # AGGRESSIVE STRATEGY 2: Remove remaining empty tags and optimize descriptions
+        elements_to_check = ['desc', 'title']
         for tag in elements_to_check:
             element = programme.find(tag)
             
-            # Check if element exists AND has no children AND has no text content
-            if (element is not None and 
+            if element is not None and element.text is not None:
+                # Optimize <desc> and <title> Content by normalizing excessive whitespace
+                # Replace 2 or more consecutive spaces/newlines with a single space, then strip leading/trailing
+                element.text = re.sub(r'\s{2,}', ' ', element.text).strip()
+                
+                # If after cleaning the element is now empty, remove it entirely
+                if not element.text:
+                    parent = element.getparent()
+                    if parent is not None:
+                        parent.remove(element)
+            
+            # Remove tags that were empty initially
+            elif (element is not None and 
                 len(element) == 0 and 
                 (element.text is None or not element.text.strip()) and
                 not element.attrib):
                 
-                # Safely remove it
                 parent = element.getparent()
                 if parent is not None:
                     parent.remove(element)
-        
-        # 2. Optimize <desc> (Description) Content by normalizing excessive whitespace
-        desc = programme.find('desc')
-        if desc is not None and desc.text is not None:
-            # Replace 2 or more consecutive spaces/newlines with a single space, then strip leading/trailing
-            desc.text = re.sub(r'\s{2,}', ' ', desc.text).strip()
-            
-            # If after cleaning the description is now empty, remove the element entirely
-            if not desc.text:
-                parent = desc.getparent()
-                if parent is not None:
-                    parent.remove(desc)
 
-    # Note: LXML is namespace-aware; standard XMLTV tags (like 'tv', 'channel', 'programme') 
-    # don't typically have namespaces defined, so direct tag iteration works fine.
     print("Optimization complete.")
 
 
@@ -159,7 +176,7 @@ def main():
     # Use etree.tostring with pretty_print=False to remove all whitespace/indentation.
     xml_bytes = etree.tostring(
         root, 
-        pretty_print=False, # <-- This is the key change for size reduction
+        pretty_print=False, # <-- Key change for size reduction
         xml_declaration=True,
         encoding='utf-8'
     )
@@ -169,9 +186,11 @@ def main():
     # Write uncompressed XML (minimal format, no pretty-print)
     output_xml_path = "combined_epg_reduced.xml"
     try:
+        # Report the uncompressed size for comparison
+        uncompressed_size_mb = len(xml_bytes) / (1024*1024)
         with open(output_xml_path, "wb") as f:
             f.write(xml_bytes)
-        print(f"  ✅ Saved {output_xml_path} ({len(xml_bytes) / (1024*1024):.2f} MB)")
+        print(f"  ✅ Saved {output_xml_path} (Uncompressed Size: {uncompressed_size_mb:.2f} MB)")
     except Exception as e:
         print(f"  ❌ Failed to write {output_xml_path}: {e}")
 
@@ -182,9 +201,9 @@ def main():
         with gzip.open(output_gz_path, "wb", compresslevel=9) as f:
             f.write(xml_bytes)
         
-        # Read back the size to report compression gains
-        compressed_size = sys.getsizeof(gzip.compress(xml_bytes, compresslevel=9))
-        print(f"  ✅ Saved {output_gz_path} (Compressed: {compressed_size / (1024*1024):.2f} MB)")
+        # NOTE: The true compressed size must be checked on the disk 
+        # (e.g., using 'ls -lh combined_epg.xml.gz').
+        print(f"  ✅ Saved {output_gz_path}. Check file size on disk for final compression gains.")
     except Exception as e:
         print(f"  ❌ Failed to write {output_gz_path}: {e}")
         
