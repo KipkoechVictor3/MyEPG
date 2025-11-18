@@ -17,6 +17,10 @@ epg_urls = [
     "https://epgshare01.online/epgshare01/epg_ripper_US_SPORTS1.xml.gz",
     "https://epgshare01.online/epgshare01/epg_ripper_AU1.xml.gz",
     "https://epgshare01.online/epgshare01/epg_ripper_CA1.xml.gz"
+    "https://epgshare01.online/epgshare01/epg_ripper_SG1.xml.gz"
+    "https://epgshare01.online/epgshare01/epg_ripper_NG1.xml.gz"
+    "https://epgshare01.online/epgshare01/epg_ripper_KE1.xml.gz"
+    "https://epgshare01.online/epgshare01/epg_ripper_CA2.xml.gz"
 ]
 
 headers = {"User-Agent": "EPG-Merger/1.0 (+https://github.com)"}
