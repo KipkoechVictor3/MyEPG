@@ -24,7 +24,7 @@ jobs:
           python-version: '3.x'
 
       - name: Install dependencies
-        run: pip install requests
+        run: pip install lxml requests
 
       - name: Merge EPG
         run: python merge_epg.py
