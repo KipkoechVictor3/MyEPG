@@ -17,11 +17,40 @@ EPG_KEYS_TO_FIND = [
     "US_SPORTS", "AU", "CA", "SG", "NG", "KE"
 ]
 
-HEADERS = {"User-Agent": "EPG-Merger-Dynamic-Reduced/1.2 (+https://github.com)"}
+HEADERS = {"User-Agent": "EPG-Merger-Dynamic-Reduced/1.3 (+https://github.com)"}
 TIMEOUT = 60
 # ---------------------
 
-# --- New Function for Size Reduction (Content Cleanup) ---
+# --- New Function for Timestamp Optimization (Advanced Size Reduction) ---
+def optimize_timestamps(root: etree.Element):
+    """
+    Strips the timezone offset (e.g., ' +0000') from the 'start' and 'stop' 
+    attributes of all <programme> elements.
+    
+    WARNING: This assumes the receiving system can correctly interpret the 
+    timestamps as UTC without the explicit offset.
+    """
+    print("Applying ADVANCED optimization: Stripping timezone offset from timestamps...")
+    
+    # Iterate through all 'programme' elements
+    for programme in root.iter('programme'):
+        
+        # Optimize 'start' attribute
+        start_time = programme.get('start')
+        if start_time and len(start_time) > 5 and start_time[-5] == ' ':
+            # Trim the last 5 characters (e.g., ' +0000')
+            programme.set('start', start_time[:-5]) 
+
+        # Optimize 'stop' attribute
+        stop_time = programme.get('stop')
+        if stop_time and len(stop_time) > 5 and stop_time[-5] == ' ':
+            # Trim the last 5 characters (e.g., ' +0000')
+            programme.set('stop', stop_time[:-5]) 
+
+    print("Timestamp optimization complete.")
+
+
+# --- Function for Size Reduction (Content Cleanup) ---
 def optimize_epg_content(root: etree.Element):
     """
     Applies aggressive content optimizations to the merged XML tree before final writing.
@@ -77,7 +106,7 @@ def optimize_epg_content(root: etree.Element):
                 if parent is not None:
                     parent.remove(element)
 
-    print("Optimization complete.")
+    print("Content optimization complete.")
 
 
 # --- Existing Functions (Updated to use lxml for merging) ---
@@ -167,8 +196,9 @@ def main():
         except Exception as e:
             print(f"  ❌ Failed to process {url}: {e}")
 
-    # 4. Apply size reduction optimizations
+    # 4. Apply all size reduction optimizations
     optimize_epg_content(root)
+    optimize_timestamps(root) # <-- NEW OPTIMIZATION STEP
 
     # 5. Final output serialization and compression
     
@@ -186,7 +216,6 @@ def main():
     # Write uncompressed XML (minimal format, no pretty-print)
     output_xml_path = "combined_epg_reduced.xml"
     try:
-        # Report the uncompressed size for comparison
         uncompressed_size_mb = len(xml_bytes) / (1024*1024)
         with open(output_xml_path, "wb") as f:
             f.write(xml_bytes)
@@ -201,9 +230,8 @@ def main():
         with gzip.open(output_gz_path, "wb", compresslevel=9) as f:
             f.write(xml_bytes)
         
-        # NOTE: The true compressed size must be checked on the disk 
-        # (e.g., using 'ls -lh combined_epg.xml.gz').
-        print(f"  ✅ Saved {output_gz_path}. Check file size on disk for final compression gains.")
+        # NOTE: The true compressed size must be checked on the disk.
+        print(f"  ✅ Saved {output_gz_path}. Expect further reduction due to timestamp changes.")
     except Exception as e:
         print(f"  ❌ Failed to write {output_gz_path}: {e}")
         
