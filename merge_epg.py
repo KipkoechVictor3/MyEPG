@@ -2,7 +2,7 @@
 # Install them using: pip install lxml requests
 import requests
 import gzip
-from lxml import etree # Replaced xml.etree.ElementTree with lxml
+from lxml import etree 
 from io import BytesIO
 from urllib.parse import urljoin
 import re 
@@ -11,24 +11,27 @@ import sys
 # --- Configuration ---
 BASE_URL = "https://epgshare01.online/epgshare01/"
 
-# EPG source keys to fetch.
+# EPG source keys to find in the main directory
 EPG_KEYS_TO_FIND = [
     "UK", "US", "NZ", "DUMMY_CHANNELS", "ZA", "ID", "MY",
     "US_SPORTS", "AU", "CA", "SG", "NG", "KE", "HK"
 ]
 
-HEADERS = {"User-Agent": "EPG-Merger-Dynamic-Reduced/1.3 (+https://github.com)"}
+# NEW: Static URLs to always include (Open-EPG links)
+EXTRA_STATIC_URLS = [
+    "https://www.open-epg.com/files/southafrica2.xml.gz",
+    "https://www.open-epg.com/files/slovenia2.xml.gz"
+]
+
+HEADERS = {"User-Agent": "EPG-Merger-Dynamic-Reduced/1.4 (+https://github.com)"}
 TIMEOUT = 60
 # ---------------------
 
-# --- New Function for Timestamp Optimization (Advanced Size Reduction) ---
+# --- Function for Timestamp Optimization (Advanced Size Reduction) ---
 def optimize_timestamps(root: etree.Element):
     """
     Strips the timezone offset (e.g., ' +0000') from the 'start' and 'stop' 
     attributes of all <programme> elements.
-    
-    WARNING: This assumes the receiving system can correctly interpret the 
-    timestamps as UTC without the explicit offset.
     """
     print("Applying ADVANCED optimization: Stripping timezone offset from timestamps...")
     
@@ -62,14 +65,13 @@ def optimize_epg_content(root: etree.Element):
     for programme in root.iter('programme'):
         
         # AGGRESSIVE STRATEGY 1: Remove common non-essential and high-volume elements
-        # Removing these optional tags can drastically reduce the byte count.
         elements_to_strip = [
-            'sub-title',  # Often repeats information or is low-value
-            'credits',    # Unless critical, actors/directors lists are large
+            'sub-title',  
+            'credits',    
             'star-rating',
             'review',
-            'icon',       # URLs are compressible, but removing the tag saves structure bytes
-            'language',   # If the language is consistent across the source, removing this saves a lot of repetition
+            'icon',       
+            'language',   
         ]
         
         for tag in elements_to_strip:
@@ -87,7 +89,6 @@ def optimize_epg_content(root: etree.Element):
             
             if element is not None and element.text is not None:
                 # Optimize <desc> and <title> Content by normalizing excessive whitespace
-                # Replace 2 or more consecutive spaces/newlines with a single space, then strip leading/trailing
                 element.text = re.sub(r'\s{2,}', ' ', element.text).strip()
                 
                 # If after cleaning the element is now empty, remove it entirely
@@ -108,8 +109,6 @@ def optimize_epg_content(root: etree.Element):
 
     print("Content optimization complete.")
 
-
-# --- Existing Functions (Updated to use lxml for merging) ---
 
 def get_latest_epg_urls():
     """
@@ -163,18 +162,24 @@ def get_latest_epg_urls():
 def main():
     """Main function to run the EPG merger workflow with size reduction."""
     
-    # 1. Dynamically find the latest URLs
-    epg_urls = get_latest_epg_urls()
+    # 1. Get Dynamic URLs
+    dynamic_urls = get_latest_epg_urls()
 
-    if not epg_urls:
-        print("\n❌ No EPG URLs were successfully resolved. Exiting.")
+    # 2. Combine Dynamic URLs with the new Static URLs
+    # We add the static URLs regardless of whether dynamic ones were found
+    all_epg_urls = dynamic_urls + EXTRA_STATIC_URLS
+
+    if not all_epg_urls:
+        print("\n❌ No EPG URLs (Dynamic or Static) were found. Exiting.")
         return
+    else:
+        print(f"\nProcessing {len(all_epg_urls)} total sources ({len(dynamic_urls)} dynamic, {len(EXTRA_STATIC_URLS)} static).")
 
-    # 2. Initialize XML tree using lxml
+    # 3. Initialize XML tree using lxml
     root = etree.Element("tv")
     
-    # 3. Download and merge EPG files
-    for url in epg_urls:
+    # 4. Download and merge EPG files
+    for url in all_epg_urls:
         print(f"\nDownloading {url} ...")
         try:
             r = requests.get(url, timeout=TIMEOUT, headers=HEADERS)
@@ -191,29 +196,28 @@ def main():
             for child in epg_tree:
                 root.append(child)
             
-            print(f"  ✅ Added: {url}")
+            print(f"  ✅ Successfully merged: {url}")
             
         except Exception as e:
             print(f"  ❌ Failed to process {url}: {e}")
 
-    # 4. Apply all size reduction optimizations
+    # 5. Apply all size reduction optimizations
     optimize_epg_content(root)
-    optimize_timestamps(root) # <-- NEW OPTIMIZATION STEP
+    optimize_timestamps(root) 
 
-    # 5. Final output serialization and compression
+    # 6. Final output serialization and compression
     
-    # CRITICAL SIZE REDUCTION STEP: 
     # Use etree.tostring with pretty_print=False to remove all whitespace/indentation.
     xml_bytes = etree.tostring(
         root, 
-        pretty_print=False, # <-- Key change for size reduction
+        pretty_print=False, 
         xml_declaration=True,
         encoding='utf-8'
     )
     
     print("\nWriting final REDUCED EPG files...")
     
-    # Write uncompressed XML (minimal format, no pretty-print)
+    # Write uncompressed XML (minimal format)
     output_xml_path = "combined_epg_reduced.xml"
     try:
         uncompressed_size_mb = len(xml_bytes) / (1024*1024)
@@ -223,15 +227,14 @@ def main():
     except Exception as e:
         print(f"  ❌ Failed to write {output_xml_path}: {e}")
 
-    # Write compressed gzipped XML (minimal format, max compression)
+    # Write compressed gzipped XML
     output_gz_path = "combined_epg.xml.gz"
     try:
         # compresslevel=9 provides the maximum compression ratio
         with gzip.open(output_gz_path, "wb", compresslevel=9) as f:
             f.write(xml_bytes)
         
-        # NOTE: The true compressed size must be checked on the disk.
-        print(f"  ✅ Saved {output_gz_path}. Expect further reduction due to timestamp changes.")
+        print(f"  ✅ Saved {output_gz_path}.")
     except Exception as e:
         print(f"  ❌ Failed to write {output_gz_path}: {e}")
         
