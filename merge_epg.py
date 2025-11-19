@@ -14,7 +14,7 @@ BASE_URL = "https://epgshare01.online/epgshare01/"
 # EPG source keys to fetch.
 EPG_KEYS_TO_FIND = [
     "UK", "US", "NZ", "DUMMY_CHANNELS", "ZA", "ID", "MY",
-    "US_SPORTS", "AU", "CA", "SG", "NG", "KE"
+    "US_SPORTS", "AU", "CA", "SG", "NG", "KE", "HK"
 ]
 
 HEADERS = {"User-Agent": "EPG-Merger-Dynamic-Reduced/1.3 (+https://github.com)"}
