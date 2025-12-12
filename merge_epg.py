@@ -13,8 +13,8 @@ BASE_URL = "https://epgshare01.online/epgshare01/"
 
 # EPG source keys to find in the main directory
 EPG_KEYS_TO_FIND = [
-    "UK", "US", "NZ", "DUMMY_CHANNELS", "ZA", "ID", "MY",
-    "US_SPORTS", "AU", "CA", "SG", "NG", "KE", "HK"
+    "UK", "US", "NZ", "DUMMY_CHANNELS", "ID", "MY",
+    "US_SPORTS", "AU", "CA", "SG", "HK"
 ]
 
 # NEW: Static URLs to always include (Open-EPG links)
