@@ -19,8 +19,10 @@ EPG_KEYS_TO_FIND = [
 
 # NEW: Static URLs to always include (Open-EPG links)
 EXTRA_STATIC_URLS = [
-    "https://www.open-epg.com/files/southafrica2.xml.gz",
-    "https://www.open-epg.com/files/southafrica1.xml.gz"
+"https://github.com/matthuisman/i.mjh.nz/raw/master/SamsungTVPlus/gb.xml.gz",
+"https://github.com/matthuisman/i.mjh.nz/raw/master/SamsungTVPlus/gb.xml.gz",
+"https://github.com/matthuisman/i.mjh.nz/raw/master/Roku/all.xml.gz",
+"https://github.com/matthuisman/i.mjh.nz/raw/master/PlutoTV/gb.xml.gz"
 ]
 
 HEADERS = {"User-Agent": "EPG-Merger-Dynamic-Reduced/1.4 (+https://github.com)"}
