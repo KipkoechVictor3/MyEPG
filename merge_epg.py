@@ -20,7 +20,7 @@ EPG_KEYS_TO_FIND = [
 # NEW: Static URLs to always include (Open-EPG links)
 EXTRA_STATIC_URLS = [
 "https://github.com/matthuisman/i.mjh.nz/raw/master/SamsungTVPlus/gb.xml.gz",
-"https://github.com/matthuisman/i.mjh.nz/raw/master/SamsungTVPlus/gb.xml.gz",
+"https://github.com/matthuisman/i.mjh.nz/raw/master/DStv/za.xml.gz",
 "https://github.com/matthuisman/i.mjh.nz/raw/master/Roku/all.xml.gz",
 "https://github.com/matthuisman/i.mjh.nz/raw/master/PlutoTV/gb.xml.gz"
 ]
