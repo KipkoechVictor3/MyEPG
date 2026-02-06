@@ -21,7 +21,6 @@ EPG_KEYS_TO_FIND = [
 EXTRA_STATIC_URLS = [
 "https://github.com/matthuisman/i.mjh.nz/raw/master/SamsungTVPlus/gb.xml.gz",
 "https://github.com/matthuisman/i.mjh.nz/raw/master/DStv/za.xml.gz",
-"https://github.com/matthuisman/i.mjh.nz/raw/master/Roku/all.xml.gz",
 "https://github.com/matthuisman/i.mjh.nz/raw/master/PlutoTV/gb.xml.gz"
 ]
 
