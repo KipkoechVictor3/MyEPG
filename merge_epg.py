@@ -1,246 +1,115 @@
-# NOTE: This script requires the 'lxml' and 'requests' libraries. 
-# Install them using: pip install lxml requests
 import requests
 import gzip
 from lxml import etree 
 from io import BytesIO
 from urllib.parse import urljoin
 import re 
-import sys 
 
 # --- Configuration ---
 BASE_URL = "https://epgshare01.online/epgshare01/"
+EPG_KEYS_TO_FIND = ["UK", "US", "NZ", "DUMMY_CHANNELS", "ID", "MY", "US_SPORTS", "AU", "CA", "SG", "HK","PEACOCK"]
 
-# EPG source keys to find in the main directory
-EPG_KEYS_TO_FIND = [
-    "UK", "US2", "NZ", "DUMMY_CHANNELS", "ID", "MY",
-    "US_SPORTS", "AU", "CA", "SG", "HK"
-]
-
-# NEW: Static URLs to always include (Open-EPG links)
 EXTRA_STATIC_URLS = [
-"https://github.com/matthuisman/i.mjh.nz/raw/master/SamsungTVPlus/gb.xml.gz",
-"https://github.com/matthuisman/i.mjh.nz/raw/master/DStv/za.xml.gz",
-"https://github.com/matthuisman/i.mjh.nz/raw/master/PlutoTV/gb.xml.gz"
+    "https://github.com/matthuisman/i.mjh.nz/raw/master/SamsungTVPlus/gb.xml.gz",
+    "https://github.com/matthuisman/i.mjh.nz/raw/master/DStv/za.xml.gz",
+    "https://github.com/matthuisman/i.mjh.nz/raw/master/PlutoTV/gb.xml.gz"
 ]
 
-HEADERS = {"User-Agent": "EPG-Merger-Dynamic-Reduced/1.4 (+https://github.com)"}
+HEADERS = {"User-Agent": "EPG-Minimalist/3.0"}
 TIMEOUT = 60
-# ---------------------
 
-# --- Function for Timestamp Optimization (Advanced Size Reduction) ---
-def optimize_timestamps(root: etree.Element):
+def apply_aggressive_cleanup(root: etree.Element):
     """
-    Strips the timezone offset (e.g., ' +0000') from the 'start' and 'stop' 
-    attributes of all <programme> elements.
+    The 'Meat and Potatoes' cleanup:
+    1. Removes all metadata from <channel> except the name.
+    2. Removes all metadata from <programme> except the title.
+    3. Truncates timestamps to save character space.
     """
-    print("Applying ADVANCED optimization: Stripping timezone offset from timestamps...")
+    print("🧹 Starting aggressive cleanup...")
     
-    # Iterate through all 'programme' elements
-    for programme in root.iter('programme'):
+    # Clean Channels: Remove icons, URLs, and extra descriptions
+    for channel in root.xpath('//channel'):
+        for child in list(channel):
+            if child.tag != 'display-name':
+                channel.remove(child)
+
+    # Clean Programmes: This is where 90% of the weight is
+    for programme in root.xpath('//programme'):
+        # 1. Strip timezone from start/stop (e.g., "20260309140000 +0000" -> "20260309140000")
+        for attr in ['start', 'stop']:
+            val = programme.get(attr)
+            if val and " " in val:
+                programme.set(attr, val.split(' ')[0])
         
-        # Optimize 'start' attribute
-        start_time = programme.get('start')
-        if start_time and len(start_time) > 5 and start_time[-5] == ' ':
-            # Trim the last 5 characters (e.g., ' +0000')
-            programme.set('start', start_time[:-5]) 
-
-        # Optimize 'stop' attribute
-        stop_time = programme.get('stop')
-        if stop_time and len(stop_time) > 5 and stop_time[-5] == ' ':
-            # Trim the last 5 characters (e.g., ' +0000')
-            programme.set('stop', stop_time[:-5]) 
-
-    print("Timestamp optimization complete.")
-
-
-# --- Function for Size Reduction (Content Cleanup) ---
-def optimize_epg_content(root: etree.Element):
-    """
-    Applies aggressive content optimizations to the merged XML tree before final writing.
-    This focuses on removing optional, high-volume, or redundant data elements.
-    """
-    print("Applying AGGRESSIVE content optimization (stripping non-essential tags)...")
-    
-    # 1. Iterate through all 'programme' elements for deep cleanup
-    for programme in root.iter('programme'):
+        # 2. Delete every tag that ISN'T the title (removes desc, category, icon, credits, etc.)
+        for child in list(programme):
+            if child.tag != 'title':
+                programme.remove(child)
         
-        # AGGRESSIVE STRATEGY 1: Remove common non-essential and high-volume elements
-        elements_to_strip = [
-            'sub-title',  
-            'credits',    
-            'star-rating',
-            'review',
-            'icon',       
-            'language',   
-        ]
-        
-        for tag in elements_to_strip:
-            element = programme.find(tag)
-            if element is not None:
-                parent = element.getparent()
-                if parent is not None:
-                    parent.remove(element)
-
-        
-        # AGGRESSIVE STRATEGY 2: Remove remaining empty tags and optimize descriptions
-        elements_to_check = ['desc', 'title']
-        for tag in elements_to_check:
-            element = programme.find(tag)
-            
-            if element is not None and element.text is not None:
-                # Optimize <desc> and <title> Content by normalizing excessive whitespace
-                element.text = re.sub(r'\s{2,}', ' ', element.text).strip()
-                
-                # If after cleaning the element is now empty, remove it entirely
-                if not element.text:
-                    parent = element.getparent()
-                    if parent is not None:
-                        parent.remove(element)
-            
-            # Remove tags that were empty initially
-            elif (element is not None and 
-                len(element) == 0 and 
-                (element.text is None or not element.text.strip()) and
-                not element.attrib):
-                
-                parent = element.getparent()
-                if parent is not None:
-                    parent.remove(element)
-
-    print("Content optimization complete.")
-
+        # 3. Clean whitespace in titles
+        title = programme.find('title')
+        if title is not None and title.text:
+            title.text = " ".join(title.text.split())
 
 def get_latest_epg_urls():
-    """
-    Scrapes the base URL's index to find the latest version of the desired EPG files.
-    """
-    print(f"Scraping index from {BASE_URL} to find latest EPG URLs...")
-    
+    print(f"Scraping index from {BASE_URL}...")
     try:
-        # 1. Download the directory index page
         r = requests.get(BASE_URL, timeout=TIMEOUT, headers=HEADERS)
         r.raise_for_status()
-        html_content = r.text
-    except Exception as e:
-        print(f"❌ Failed to download directory index: {e}")
-        return []
-    
-    # 2. Extract all epg_ripper_*.xml.gz filenames from the HTML
-    file_link_pattern = re.compile(r'<a href="(epg_ripper_.*?\.xml\.gz)">')
-    all_xml_filenames = file_link_pattern.findall(html_content)
-    
-    # 3. Parse and group files by their base key, keeping only the highest version
-    filename_parser_pattern = re.compile(r'^epg_ripper_([A-Z_]+?)(\d*)\.xml\.gz$')
-
-    found_epgs = {} # key: {'version': int, 'filename': str}
-
-    for filename in all_xml_filenames:
-        match = filename_parser_pattern.match(filename)
+        filenames = re.findall(r'<a href="(epg_ripper_.*?\.xml\.gz)">', r.text)
         
-        if match:
-            base_key_for_lookup = match.group(1) 
-            version = int(match.group(2) or 0)
+        found_epgs = {}
+        pattern = re.compile(r'^epg_ripper_([A-Z_]+?)(\d*)\.xml\.gz$')
 
-            if base_key_for_lookup not in found_epgs or version > found_epgs[base_key_for_lookup]['version']:
-                found_epgs[base_key_for_lookup] = {'version': version, 'filename': filename}
+        for fname in filenames:
+            match = pattern.match(fname)
+            if match:
+                key, ver = match.group(1), int(match.group(2) or 0)
+                if key not in found_epgs or ver > found_epgs[key]['v']:
+                    found_epgs[key] = {'v': ver, 'f': fname}
 
-
-    # 4. Filter the resolved files against the desired EPG_KEYS_TO_FIND
-    resolved_urls = []
-    for key in EPG_KEYS_TO_FIND:
-        if key in found_epgs:
-            filename = found_epgs[key]['filename']
-            full_url = urljoin(BASE_URL, filename)
-            resolved_urls.append(full_url)
-            print(f"  ✅ Resolved '{key}' to: {filename}")
-        else:
-            print(f"  ⚠️ Warning: Could not find any file for key '{key}'. Skipping.")
-
-    return resolved_urls
-
+        return [urljoin(BASE_URL, found_epgs[k]['f']) for k in EPG_KEYS_TO_FIND if k in found_epgs]
+    except Exception as e:
+        print(f"❌ Scraping failed: {e}")
+        return []
 
 def main():
-    """Main function to run the EPG merger workflow with size reduction."""
-    
-    # 1. Get Dynamic URLs
     dynamic_urls = get_latest_epg_urls()
-
-    # 2. Combine Dynamic URLs with the new Static URLs
-    # We add the static URLs regardless of whether dynamic ones were found
-    all_epg_urls = dynamic_urls + EXTRA_STATIC_URLS
-
-    if not all_epg_urls:
-        print("\n❌ No EPG URLs (Dynamic or Static) were found. Exiting.")
-        return
-    else:
-        print(f"\nProcessing {len(all_epg_urls)} total sources ({len(dynamic_urls)} dynamic, {len(EXTRA_STATIC_URLS)} static).")
-
-    # 3. Initialize XML tree using lxml
+    all_urls = dynamic_urls + EXTRA_STATIC_URLS
+    
+    # Root element for the new merged XML
     root = etree.Element("tv")
     
-    # 4. Download and merge EPG files
-    for url in all_epg_urls:
-        print(f"\nDownloading {url} ...")
+    print(f"\nMerging {len(all_urls)} sources...")
+    
+    for url in all_urls:
         try:
             r = requests.get(url, timeout=TIMEOUT, headers=HEADERS)
             r.raise_for_status()
-
-            # Decompress and parse the XML using lxml
             with gzip.GzipFile(fileobj=BytesIO(r.content)) as gz:
-                xml_content = gz.read()
-            
-            # Use etree.fromstring() for parsing
-            epg_tree = etree.fromstring(xml_content)
-            
-            # Append all child elements (channels and programmes) to the root
-            for child in epg_tree:
-                root.append(child)
-            
-            print(f"  ✅ Successfully merged: {url}")
-            
+                source_tree = etree.fromstring(gz.read())
+                for element in source_tree:
+                    root.append(element)
+                source_tree.clear() # Clear memory from processed source
+            print(f"  ✅ Merged: {url.split('/')[-1]}")
         except Exception as e:
-            print(f"  ❌ Failed to process {url}: {e}")
+            print(f"  ❌ Failed {url}: {e}")
 
-    # 5. Apply all size reduction optimizations
-    optimize_epg_content(root)
-    optimize_timestamps(root) 
+    # Run the cleanup
+    apply_aggressive_cleanup(root)
 
-    # 6. Final output serialization and compression
+    # Convert to string with NO pretty printing (saves massive space on newlines/indentation)
+    final_xml = etree.tostring(root, xml_declaration=True, encoding='utf-8', pretty_print=False)
+
+    # Save to disk
+    output_fn = "minimal_epg.xml.gz"
+    with gzip.open(output_fn, "wb", compresslevel=9) as f:
+        f.write(final_xml)
     
-    # Use etree.tostring with pretty_print=False to remove all whitespace/indentation.
-    xml_bytes = etree.tostring(
-        root, 
-        pretty_print=False, 
-        xml_declaration=True,
-        encoding='utf-8'
-    )
-    
-    print("\nWriting final REDUCED EPG files...")
-    
-    # Write uncompressed XML (minimal format)
-    output_xml_path = "combined_epg_reduced.xml"
-    try:
-        uncompressed_size_mb = len(xml_bytes) / (1024*1024)
-        with open(output_xml_path, "wb") as f:
-            f.write(xml_bytes)
-        print(f"  ✅ Saved {output_xml_path} (Uncompressed Size: {uncompressed_size_mb:.2f} MB)")
-    except Exception as e:
-        print(f"  ❌ Failed to write {output_xml_path}: {e}")
-
-    # Write compressed gzipped XML
-    output_gz_path = "combined_epg.xml.gz"
-    try:
-        # compresslevel=9 provides the maximum compression ratio
-        with gzip.open(output_gz_path, "wb", compresslevel=9) as f:
-            f.write(xml_bytes)
-        
-        print(f"  ✅ Saved {output_gz_path}.")
-    except Exception as e:
-        print(f"  ❌ Failed to write {output_gz_path}: {e}")
-        
-    print("\nWorkflow complete.")
-
+    uncompressed_mb = len(final_xml) / (1024 * 1024)
+    print(f"\n🚀 Success!")
+    print(f"Uncompressed Size: {uncompressed_mb:.2f} MB")
+    print(f"Compressed file saved as: {output_fn}")
 
 if __name__ == "__main__":
     main()
