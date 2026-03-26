@@ -20,7 +20,7 @@ EXTRA_STATIC_URLS = [
     "https://github.com/matthuisman/i.mjh.nz/raw/master/PlutoTV/gb.xml.gz"
 ]
 
-HEADERS = {"User-Agent": "EPG-Merger-Universal/3.0"}
+HEADERS = {"User-Agent": "EPG-Merger-Universal/3.1"}
 TIMEOUT = 60
 # ---------------------
 
@@ -34,18 +34,16 @@ def fix_and_optimize_timestamps(root: etree.Element):
         for attr in ['start', 'stop']:
             time_val = programme.get(attr)
             if time_val:
-                # Extract only the numeric part (first 14 digits)
+                # Extract first 14 digits and force +0000 offset
                 clean_time = re.sub(r'\D', '', time_val)[:14]
-                # Re-add a standard UTC offset
                 programme.set(attr, f"{clean_time} +0000")
 
 def optimize_epg_content(root: etree.Element):
     """
-    Removes heavy metadata while keeping essential structure.
+    Aggressive tag removal for file reduction.
     """
     print("Applying content optimization...")
-    
-    # 1. Clean Channels (Keep display-name and ID)
+    # 1. Clean Channels (Keep display-name)
     for channel in root.xpath('//channel'):
         for child in list(channel):
             if child.tag != 'display-name':
@@ -57,7 +55,6 @@ def optimize_epg_content(root: etree.Element):
             if child.tag != 'title':
                 programme.remove(child)
         
-        # Trim whitespace in titles
         title_elem = programme.find('title')
         if title_elem is not None and title_elem.text:
             title_elem.text = " ".join(title_elem.text.split()).strip()
@@ -96,9 +93,8 @@ def main():
         print("\n❌ No URLs found.")
         return
 
-    # Create root with generator info
     root = etree.Element("tv", {
-        "generator-info-name": "EPG-Reducer-V3",
+        "generator-info-name": "EPG-Reducer-V3.1",
         "generator-info-url": "https://github.com"
     })
     
@@ -125,18 +121,14 @@ def main():
         encoding='utf-8'
     )
     
-    # Save files
-    for path, is_gz in [("combined_epg.xml", False), ("combined_epg.xml.gz", True)]:
-        try:
-            if is_gz:
-                with gzip.open(path, "wb", compresslevel=9) as f:
-                    f.write(xml_bytes)
-            else:
-                with open(path, "wb") as f:
-                    f.write(xml_bytes)
-            print(f"  ✅ Saved {path}")
-        except Exception as e:
-            print(f"  ❌ Error saving {path}: {e}")
+    # Save Compressed (Primary)
+    output_gz_path = "combined_epg.xml.gz"
+    try:
+        with gzip.open(output_gz_path, "wb", compresslevel=9) as f:
+            f.write(xml_bytes)
+        print(f"  ✅ Saved {output_gz_path}")
+    except Exception as e:
+        print(f"  ❌ Failed to write GZ: {e}")
 
     print("\nWorkflow complete.")
 
