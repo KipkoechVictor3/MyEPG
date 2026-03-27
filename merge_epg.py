@@ -11,13 +11,12 @@ BASE_URL = "https://epgshare01.online/epgshare01/"
 
 EPG_KEYS_TO_FIND = [
     "UK", "US2", "NZ", "DUMMY_CHANNELS", "ID", "MY",
-    "US_SPORTS", "AU", "CA", "SG", "HK", "PEACOCK"
+    "US_SPORTS", "US_LOCALS1", "AU", "CA", "SG", "HK", "PEACOCK"
 ]
 
 EXTRA_STATIC_URLS = [
     "https://github.com/matthuisman/i.mjh.nz/raw/master/SamsungTVPlus/gb.xml.gz",
     "https://github.com/matthuisman/i.mjh.nz/raw/master/DStv/za.xml.gz",
-    "https://github.com/matthuisman/i.mjh.nz/raw/master/PlutoTV/gb.xml.gz"
 ]
 
 HEADERS = {"User-Agent": "EPG-Merger-Universal/3.1"}
