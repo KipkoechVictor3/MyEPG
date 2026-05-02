@@ -39,16 +39,16 @@ def fix_and_optimize_timestamps(root: etree.Element):
 
 def optimize_epg_content(root: etree.Element):
     """
-    Aggressive tag removal for file reduction.
+    Aggressive tag removal for file reduction and LIVE event capitalization.
     """
-    print("Applying content optimization...")
+    print("Applying content optimization and LIVE event formatting...")
     # 1. Clean Channels (Keep display-name)
     for channel in root.xpath('//channel'):
         for child in list(channel):
             if child.tag != 'display-name':
                 channel.remove(child)
 
-    # 2. Clean Programmes (Keep only title)
+    # 2. Clean Programmes (Keep only title and apply CAPS to Live events)
     for programme in root.xpath('//programme'):
         for child in list(programme):
             if child.tag != 'title':
@@ -56,7 +56,14 @@ def optimize_epg_content(root: etree.Element):
         
         title_elem = programme.find('title')
         if title_elem is not None and title_elem.text:
-            title_elem.text = " ".join(title_elem.text.split()).strip()
+            # Clean whitespace
+            text = " ".join(title_elem.text.split()).strip()
+            
+            # Check if 'live' is in the title (case insensitive)
+            if "live" in text.lower():
+                text = text.upper()
+            
+            title_elem.text = text
 
 def get_latest_epg_urls():
     print(f"Scraping index from {BASE_URL}...")
