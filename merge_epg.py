@@ -11,7 +11,7 @@ BASE_URL = "https://epgshare01.online/epgshare01/"
 
 EPG_KEYS_TO_FIND = [
     "UK", "US2", "NZ", "DUMMY_CHANNELS", "ID", "MY",
-    "US_SPORTS", "US_LOCALS1", "AU", "CA", "SG", "HK", "PEACOCK"
+    "US_SPORTS", "AU", "CA", "SG", "HK", "PEACOCK"
 ]
 
 EXTRA_STATIC_URLS = [
